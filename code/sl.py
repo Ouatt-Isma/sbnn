@@ -51,7 +51,11 @@ class MultinomialOpinion:
         self.belief = belief
         self.u = uncertainty
         self.base_rate = base_rate
-
+    
+    def get_best_belief_uncertainty(self):
+        max_key, max_value = max(self.belief.items(), key=lambda x: x[1])
+        return (max_key, max_value, self.u)
+    
     def expectation(self) -> Dict[str, float]:
         return {x: self.belief[x] + self.base_rate[x] * self.u for x in self.belief}
 
@@ -66,7 +70,8 @@ class MultinomialOpinion:
         if any(v <= 0 for v in alpha.values()):
             raise ValueError("All alpha parameters must be > 0 for Dirichlet.")
         outcomes = list(alpha.keys())
-        r = {x: alpha[x] - 1 for x in outcomes}
+        # r = {x: alpha[x] - 1 for x in outcomes}
+        r = {x: alpha[x] for x in outcomes}
         K = sum(r.values())
         W = len(outcomes)
         belief = {x: r[x] / (K + W) for x in outcomes}
@@ -77,11 +82,8 @@ class MultinomialOpinion:
     
     def from_list_prob(data_dirichlet, base_rate: Dict[str, float] = None):
         # data_dirichlet list of list of prob
-        print(data_dirichlet)
         alphas = dirichlet_estimate(data_dirichlet)
-        print()
-        print(alphas)
-        print(len(alphas))
+
         alpha = {}
         for i in range(len(alphas)):
             alpha[i] = alphas[i]

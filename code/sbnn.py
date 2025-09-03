@@ -86,29 +86,79 @@ class BayesianBinaryLinear(nn.Module):
         return kl_beta(F.softplus(self.alpha), F.softplus(self.beta)).sum()
     
     
+class BayesianBinaryConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
+        super().__init__()
+        self.stride = stride
+        self.padding = padding
+        self.kernel_size = kernel_size
+
+        shape = (out_channels, in_channels, kernel_size, kernel_size)
+        self.alpha = nn.Parameter(torch.full(shape, -1.0))
+        self.beta = nn.Parameter(torch.full(shape, -1.0))
+        self.weight_value = nn.Parameter(torch.randn(shape) * 0.5)
+        self.bias = nn.Parameter(torch.randn(out_channels) * 0.1)
+
+    def forward(self, x, temperature=0.05):
+        p = sample_kumaraswamy(F.softplus(self.alpha), F.softplus(self.beta))
+        mask = sample_concrete(p, temperature)
+        effective_weight = mask * self.weight_value
+        out = F.conv2d(x, effective_weight, self.bias, stride=self.stride, padding=self.padding)
+        return out, p, mask
+
+    def kl_loss(self):
+        return kl_beta(F.softplus(self.alpha), F.softplus(self.beta)).sum()
+
 
 # ---------------------------------------------------------------
 # Example Network with 2 Bayesian Linear Layers
 # ---------------------------------------------------------------
 class BayesianNet(nn.Module):
-    def __init__(self, input_dim=2, hidden_dim=4, output_dim=1):
+    def __init__(self, input_dim=784, hidden_dim=128, output_dim=10, use_conv=False):
         super().__init__()
-        self.layer1 = BayesianBinaryLinear(input_dim, hidden_dim)
+        self.use_conv = use_conv
+        self.multiclass = output_dim > 1
+
+        if use_conv:
+            self.conv = BayesianBinaryConv2d(1, 8, kernel_size=3, padding=1)
+            self.pool = nn.MaxPool2d(2, 2)
+            conv_out_dim = 8 * 14 * 14  # MNIST after pooling
+            self.layer1 = BayesianBinaryLinear(conv_out_dim, hidden_dim)
+        else:
+            self.layer1 = BayesianBinaryLinear(input_dim, hidden_dim)
+
         self.layer2 = BayesianBinaryLinear(hidden_dim, output_dim)
-        self.multiclass = output_dim>1 
 
     def forward(self, x, temperature=0.05):
+        if self.use_conv:
+            x = x.view(-1, 1, 28, 28)
+            x, p0, m0 = self.conv(x, temperature)
+            x = self.pool(F.relu(x))
+            x = x.view(x.size(0), -1)  # flatten
+        else:
+            p0 = m0 = None
+
         h, p1, m1 = self.layer1(x, temperature)
         h = F.relu(h)
         out, p2, m2 = self.layer2(h, temperature)
+
         if out.shape[1] == 1:
             out = torch.sigmoid(out)
         else:
             out = F.softmax(out, dim=1)
-        return out, (p1, p2), (m1, m2)
-    
+
+        return out, (p0, p1, p2), (m0, m1, m2)
+
     def kl(self):
-        return self.layer1.kl_loss() + self.layer2.kl_loss()
+        kl = 0
+        if self.use_conv:
+            kl += self.conv.kl_loss()
+        kl += self.layer1.kl_loss()
+        kl += self.layer2.kl_loss()
+        return kl
+
+    # existing show_model, predict_multiple, predict_nested_samples_with_raw stay same
+
 
     def show_model(self):
         print("BayesianNet Architecture")
@@ -204,6 +254,44 @@ class BayesianNet(nn.Module):
 
         return final_output
 
+class BayesianNetLeNet(nn.Module):
+    def __init__(self, output_dim=10):
+        super().__init__()
+        self.conv1 = BayesianBinaryConv2d(1, 20, kernel_size=5)
+        self.conv2 = BayesianBinaryConv2d(20, 50, kernel_size=5)
+        self.fc1 = BayesianBinaryLinear(800, 500)
+        self.fc2 = BayesianBinaryLinear(500, output_dim)
+        self.multiclass = output_dim > 1
+
+    def forward(self, x, temperature=0.05):
+        # Conv layers
+        h1, p1, m1 = self.conv1(x, temperature)
+        h1 = F.relu(h1)
+        h1 = F.max_pool2d(h1, 2)
+
+        h2, p2, m2 = self.conv2(h1, temperature)
+        h2 = F.relu(h2)
+        h2 = F.max_pool2d(h2, 2)
+
+        # Flatten
+        h2 = h2.view(h2.size(0), -1)
+
+        # FC layers
+        h3, p3, m3 = self.fc1(h2, temperature)
+        h3 = F.relu(h3)
+        out, p4, m4 = self.fc2(h3, temperature)
+
+        # Softmax for multiclass
+        if out.shape[1] == 1:
+            out = torch.sigmoid(out)
+        else:
+            out = F.softmax(out, dim=1)
+
+        return out, (p1, p2, p3, p4), (m1, m2, m3, m4)
+
+    def kl(self):
+        return (self.conv1.kl_loss() + self.conv2.kl_loss() +
+                self.fc1.kl_loss() + self.fc2.kl_loss())
 
 
 # ---------------------------------------------------------------

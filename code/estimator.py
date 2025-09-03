@@ -9,7 +9,8 @@ from scipy.stats import beta
 
 class BetaEstimator:
     @staticmethod
-    def estimate_moments(data: list[float]):
+    def estimate_moments(data):
+    # def estimate_moments(data: list[float]):
         flat = [p for p in data]
         mean = np.mean(flat)
         var = np.var(flat, ddof=1)
@@ -21,7 +22,8 @@ class BetaEstimator:
         return alpha, beta
 
     @staticmethod
-    def estimate_mle(data: list[float]):
+    def estimate_mle(data):
+    # def estimate_mle(data: list[float]):
         flat = [p for p in data]
         alpha0, beta0 = BetaEstimator.estimate_moments(data)
 
@@ -37,7 +39,8 @@ class BetaEstimator:
         return alpha0, beta0
 
     @staticmethod
-    def estimate_kl(data: list[float]):
+    def estimate_kl(data):
+    # def estimate_kl(data: list[float]):
         flat = [p for p in data]
 
         def neg_log_likelihood(params):
@@ -71,7 +74,8 @@ class BetaEstimator:
 
 class DirichletEstimator:
     @staticmethod
-    def estimate_moments(data: list[list[float]]):
+    def estimate_moments(data):
+    # def estimate_moments(data: list[list[float]]):
         X = np.array(data)
         mean = np.mean(X, axis=0)
         var = np.var(X, axis=0, ddof=1)
@@ -82,7 +86,8 @@ class DirichletEstimator:
         return alpha0
 
     @staticmethod
-    def estimate_mle(data: list[list[float]]):
+    # def estimate_mle(data: list[list[float]]):
+    def estimate_mle(data):
         X = np.array(data)
         n, k = X.shape
         m = np.mean(X, axis=0)
@@ -98,7 +103,8 @@ class DirichletEstimator:
         return alpha0
 
     @staticmethod
-    def estimate_kl(data: list[list[float]]):
+    # def estimate_kl(data: list[list[float]]):
+    def estimate_kl(data):
         X = np.array(data)
         n, k = X.shape
 
